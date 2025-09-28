@@ -1,0 +1,125 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+jobs:
+  build-binaries:
+    name: Build for ${{ matrix.target }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+          - { target: 'x86_64-unknown-linux-gnu', os: 'ubuntu-latest', name: 'ai-proxy-x86_64-linux-gnu' }
+          - { target: 'aarch64-unknown-linux-gnu', os: 'ubuntu-latest-arm64', name: 'ai-proxy-aarch64-linux-gnu' }
+          - { target: 'x86_64-unknown-linux-musl', os: 'ubuntu-latest', name: 'ai-proxy-x86_64-linux-musl' }
+          - { target: 'aarch64-unknown-linux-musl', os: 'ubuntu-latest-arm64', name: 'ai-proxy-aarch64-linux-musl' }
+          - { target: 'x86_64-pc-windows-gnu', os: 'windows-latest', name: 'ai-proxy-x86_64-windows.exe' }
+          - { target: 'aarch64-pc-windows-msvc', os: 'windows-latest', name: 'ai-proxy-aarch64-windows.exe' }
+          - { target: 'x86_64-apple-darwin', os: 'macos-latest', name: 'ai-proxy-x86_64-darwin' }
+          - { target: 'aarch64-apple-darwin', os: 'macos-latest', name: 'ai-proxy-aarch64-darwin' }
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          target: ${{ matrix.target }}
+          override: true
+
+      - name: Install musl-tools for musl target
+        if: contains(matrix.target, 'musl')
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y musl-tools
+
+      - name: Build binary
+        run: cargo build --release --target ${{ matrix.target }}
+        env:
+          RUSTFLAGS: ${{ contains(matrix.target, 'musl') && '-C target-feature=+crt-static' || '' }}
+
+      - name: Package binary
+        shell: bash
+        run: |
+          mkdir -p artifacts
+          src_path="target/${{ matrix.target }}/release/ai-proxy"
+          if [[ "${{ matrix.os }}" == "windows-latest" ]]; then
+            src_path+=".exe"
+          fi
+          mv "$src_path" "artifacts/${{ matrix.name }}"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.name }}
+          path: artifacts/${{ matrix.name }}
+
+  create-release:
+    runs-on: ubuntu-latest
+    needs: build-binaries
+    permissions:
+      contents: write
+    steps:
+      - name: Download all binary artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release
+
+      - name: Move binaries to a single directory
+        run: |
+          mkdir -p release-final
+          find release -type f -exec mv {} release-final/ \;
+
+      - name: Create Release and Upload Binaries
+        uses: softprops/action-gh-release@v2
+        with:
+          files: release-final/*
+          body: "Automated release for ${{ github.ref }}"
+
+  build-and-push-image:
+    runs-on: ubuntu-latest
+    needs: create-release
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download binary artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Prepare for Docker build
+        run: |
+          mv artifacts/ai-proxy-x86_64-linux-musl/ai-proxy-x86_64-linux-musl binary-amd64
+          mv artifacts/ai-proxy-aarch64-linux-musl/ai-proxy-aarch64-linux-musl binary-arm64
+          chmod +x binary-amd64 binary-arm64
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push multi-arch Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Dockerfile.release
+          push: true
+          tags: ghcr.io/${{ github.repository }}:${{ github.ref_name }}
+          platforms: linux/amd64,linux/arm64
