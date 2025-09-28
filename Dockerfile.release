@@ -4,23 +4,24 @@ ARG TARGETPLATFORM
 # Stage 1: Select the correct pre-built binary based on the target platform
 FROM scratch as builder
 ARG TARGETPLATFORM
-COPY binary-amd64 /ai-proxy-amd64
-COPY binary-arm64 /ai-proxy-arm64
+COPY binary-amd64 /gemini-proxy-amd64
+COPY binary-arm64 /gemini-proxy-arm64
 
 # Stage 2: Final image
-FROM alpine:latest
+FROM debian:stable-slim
+WORKDIR /app
 
 # Copy the correct binary from the builder stage
-COPY --from=builder /ai-proxy-$(echo ${TARGETPLATFORM} | cut -d'/' -f2) /usr/local/bin/ai-proxy
+COPY --from=builder /gemini-proxy-$(echo ${TARGETPLATFORM} | cut -d'/' -f2) ./gemini-proxy
 
 # Install root certificates for making HTTPS requests
-RUN apk --no-cache add ca-certificates
+RUN apt-get update && apt-get install -y ca-certificates && rm -rf /var/lib/apt/lists/*
 
 # Expose the default port. The actual port is controlled by the .env file.
 EXPOSE 3000
 
 # Set the user and group to a non-root user for security
-RUN addgroup -S appgroup && adduser -S appuser -G appgroup
+RUN addgroup --system appgroup && adduser --system --ingroup appgroup appuser
 USER appuser
 
 # Set environment variables for the application
@@ -40,4 +41,4 @@ ENV APP_BASE_URL="http://0.0.0.0:3000"
 # ENV OAUTH_CLIENT_SECRET=""
 
 # Command to run the application
-CMD ["ai-proxy"]
+CMD ["./gemini-proxy"]
