@@ -12,14 +12,14 @@ jobs:
     strategy:
       matrix:
         include:
-          - { target: 'x86_64-unknown-linux-gnu', os: 'ubuntu-latest', name: 'ai-proxy-x86_64-linux-gnu' }
-          - { target: 'aarch64-unknown-linux-gnu', os: 'ubuntu-latest-arm64', name: 'ai-proxy-aarch64-linux-gnu' }
-          - { target: 'x86_64-unknown-linux-musl', os: 'ubuntu-latest', name: 'ai-proxy-x86_64-linux-musl' }
-          - { target: 'aarch64-unknown-linux-musl', os: 'ubuntu-latest-arm64', name: 'ai-proxy-aarch64-linux-musl' }
-          - { target: 'x86_64-pc-windows-gnu', os: 'windows-latest', name: 'ai-proxy-x86_64-windows.exe' }
-          - { target: 'aarch64-pc-windows-msvc', os: 'windows-latest', name: 'ai-proxy-aarch64-windows.exe' }
-          - { target: 'x86_64-apple-darwin', os: 'macos-latest', name: 'ai-proxy-x86_64-darwin' }
-          - { target: 'aarch64-apple-darwin', os: 'macos-latest', name: 'ai-proxy-aarch64-darwin' }
+          - { target: 'x86_64-unknown-linux-gnu', os: 'ubuntu-latest', name: 'gemini-proxy-x86_64-linux-gnu' }
+          - { target: 'aarch64-unknown-linux-gnu', os: 'ubuntu-latest', name: 'gemini-proxy-aarch64-linux-gnu' }
+          - { target: 'x86_64-unknown-linux-musl', os: 'ubuntu-latest', name: 'gemini-proxy-x86_64-linux-musl' }
+          - { target: 'aarch64-unknown-linux-musl', os: 'ubuntu-latest', name: 'gemini-proxy-aarch64-linux-musl' }
+          - { target: 'x86_64-pc-windows-gnu', os: 'windows-latest', name: 'gemini-proxy-x86_64-windows.exe' }
+          - { target: 'aarch64-pc-windows-msvc', os: 'windows-latest', name: 'gemini-proxy-aarch64-windows.exe' }
+          - { target: 'x86_64-apple-darwin', os: 'macos-latest', name: 'gemini-proxy-x86_64-darwin' }
+          - { target: 'aarch64-apple-darwin', os: 'macos-latest', name: 'gemini-proxy-aarch64-darwin' }
 
     steps:
       - name: Checkout code
@@ -32,22 +32,24 @@ jobs:
           target: ${{ matrix.target }}
           override: true
 
-      - name: Install musl-tools for musl target
-        if: contains(matrix.target, 'musl')
+      - name: Install dependencies for cross-compilation (Linux)
+        if: matrix.os == 'ubuntu-latest'
         run: |
           sudo apt-get update -y
-          sudo apt-get install -y musl-tools
+          sudo apt-get install -y gcc-aarch64-linux-gnu musl-tools
 
       - name: Build binary
         run: cargo build --release --target ${{ matrix.target }}
         env:
+          CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: aarch64-linux-gnu-gcc
+          CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER: aarch64-linux-gnu-gcc
           RUSTFLAGS: ${{ contains(matrix.target, 'musl') && '-C target-feature=+crt-static' || '' }}
 
       - name: Package binary
         shell: bash
         run: |
           mkdir -p artifacts
-          src_path="target/${{ matrix.target }}/release/ai-proxy"
+          src_path="target/${{ matrix.target }}/release/gemini-proxy"
           if [[ "${{ matrix.os }}" == "windows-latest" ]]; then
             src_path+=".exe"
           fi
@@ -104,8 +106,8 @@ jobs:
 
       - name: Prepare for Docker build
         run: |
-          mv artifacts/ai-proxy-x86_64-linux-musl/ai-proxy-x86_64-linux-musl binary-amd64
-          mv artifacts/ai-proxy-aarch64-linux-musl/ai-proxy-aarch64-linux-musl binary-arm64
+          mv artifacts/gemini-proxy-x86_64-linux-musl/gemini-proxy-x86_64-linux-musl binary-amd64
+          mv artifacts/gemini-proxy-aarch64-linux-musl/gemini-proxy-aarch64-linux-musl binary-arm64
           chmod +x binary-amd64 binary-arm64
 
       - name: Log in to GitHub Container Registry
