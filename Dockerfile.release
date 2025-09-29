@@ -4,6 +4,7 @@ ARG TARGETARCH
 
 # Final image
 FROM debian:stable-slim
+ARG TARGETARCH
 WORKDIR /app
 
 # Copy the correct binary from the build context based on the target architecture
