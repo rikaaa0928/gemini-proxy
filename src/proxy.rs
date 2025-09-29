@@ -244,9 +244,19 @@ async fn discover_project_id(
 pub async fn gemini_proxy_handler(
     State(state): State<AppState>,
     TypedHeader(auth): TypedHeader<Authorization<Bearer>>,
-    Path(model): Path<String>,
+    Path(path): Path<String>,
     Json(payload): Json<StandardGeminiRequest>,
 ) -> impl IntoResponse {
+    // Parse path: expected format "model:streamGenerateContent"
+    let parts: Vec<&str> = path.split(':').collect();
+    if parts.len() != 2 || parts[1] != "streamGenerateContent" {
+        return Response::builder()
+            .status(400)
+            .body(Body::from("Invalid path format. Expected /v1beta/models/{model}:streamGenerateContent"))
+            .unwrap();
+    }
+    let model = parts[0].to_string();
+
     // 1. Get and refresh token
     let mut token_record = match ensure_valid_token(&state, auth.token()).await {
         Ok(record) => record,
@@ -317,37 +327,40 @@ fn transform_stream(
 
     stream::poll_fn(move |cx| {
         loop {
-            // 检查缓冲区中是否有完整的 SSE 消息
-            if let Some(end_index) = buffer.find("\n\n") {
-                let message = buffer.drain(..end_index + 2).collect::<String>();
-                let mut transformed_message = String::new();
+            if let Some(end_index) = buffer.find("\r\n") {
+                let message_block = buffer.drain(..end_index + 2).collect::<String>();
+                let mut transformed_lines = Vec::new();
 
-                for line in message.lines() {
+                for line in message_block.lines() {
                     if line.starts_with("data:") {
                         let json_str = &line[5..].trim();
-                        if let Ok(mut internal_sse) = serde_json::from_str::<Value>(json_str) {
-                            if let Some(standard_sse) = internal_sse.get_mut("response") {
-                                if let Ok(formatted_sse) = serde_json::to_string(standard_sse) {
-                                    transformed_message.push_str(&format!("data: {}\n", formatted_sse));
+                        if let Ok(internal_sse) = serde_json::from_str::<Value>(json_str) {
+                            if let Some(response) = internal_sse.get("response") {
+                                if let Some(candidates) = response.get("candidates") {
+                                    let standard_sse = serde_json::json!({ "candidates": candidates });
+                                    if let Ok(formatted_sse) = serde_json::to_string(&standard_sse) {
+                                        transformed_lines.push(format!("data: {}", formatted_sse));
+                                    }
                                 }
                             }
                         }
-                    } else {
-                        // 保留其他行，如 event: 或 id:
-                        transformed_message.push_str(line);
-                        transformed_message.push('\n');
+                    } else if !line.is_empty() {
+                        // 保留其他行，例如 'id:' 或 'event:'
+                        transformed_lines.push(line.to_string());
                     }
                 }
-                // 确保消息以两个换行符结尾
-                transformed_message.push('\n');
-                return std::task::Poll::Ready(Some(Ok(Bytes::from(transformed_message))));
+
+                // 将处理过的行用 \r\n 连接，并以 \r\n\r\n 结尾，以符合 SSE 规范
+                let final_message = format!("{}\r\n\r\n", transformed_lines.join("\r\n"));
+                return std::task::Poll::Ready(Some(Ok(Bytes::from(final_message))));
             }
 
             // 如果缓冲区没有完整消息，从上游拉取更多数据
             match stream.poll_next_unpin(cx) {
                 std::task::Poll::Ready(Some(Ok(chunk))) => {
                     if let Ok(s) = std::str::from_utf8(&chunk) {
-                        buffer.push_str(s);
+                        // 将换行符规范化为 \n，以便可靠地查找消息边界
+                        buffer.push_str(&s);
                         // 继续循环，检查新数据是否构成了完整的消息
                         continue;
                     }

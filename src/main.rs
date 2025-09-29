@@ -52,7 +52,7 @@ async fn main() {
             get(html::logout_form_handler).post(auth::logout_handler),
         )
         .route(
-            "/v1beta/models/:model/streamGenerateContent",
+            "/v1beta/models/*path",
             axum::routing::post(proxy::gemini_proxy_handler),
         )
         .with_state(state);
