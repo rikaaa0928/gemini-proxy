@@ -4,15 +4,15 @@ ARG TARGETPLATFORM
 # Stage 1: Select the correct pre-built binary based on the target platform
 FROM scratch as builder
 ARG TARGETPLATFORM
-COPY binary-amd64 /gemini-proxy-amd64
-COPY binary-arm64 /gemini-proxy-arm64
+COPY --from=--platform=${TARGETPLATFORM} binary-amd64 /gemini-proxy
+COPY --from=--platform=${TARGETPLATFORM} binary-arm64 /gemini-proxy
 
 # Stage 2: Final image
 FROM debian:stable-slim
 WORKDIR /app
 
 # Copy the correct binary from the builder stage
-COPY --from=builder /gemini-proxy-$(echo ${TARGETPLATFORM} | cut -d'/' -f2) ./gemini-proxy
+COPY --from=builder /gemini-proxy ./gemini-proxy
 
 # Install root certificates for making HTTPS requests
 RUN apt-get update && apt-get install -y ca-certificates && rm -rf /var/lib/apt/lists/*
@@ -21,8 +21,8 @@ RUN apt-get update && apt-get install -y ca-certificates && rm -rf /var/lib/apt/
 EXPOSE 3000
 
 # Set the user and group to a non-root user for security
-RUN addgroup --system appgroup && adduser --system --ingroup appgroup appuser
-USER appuser
+#RUN addgroup --system appgroup && adduser --system --ingroup appgroup appuser
+#USER appuser
 
 # Set environment variables for the application
 # These should be provided at runtime, but we can set defaults
