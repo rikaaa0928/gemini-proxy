@@ -139,8 +139,8 @@ async fn ensure_valid_token(
     }
 
     // Token expired, try to refresh
-    let client_id = env::var("OAUTH_CLIENT_ID").expect("OAUTH_CLIENT_ID not set");
-    let client_secret = env::var("OAUTH_CLIENT_SECRET").expect("OAUTH_CLIENT_SECRET not set");
+    let client_id = env::var("GOOGLE_CLIENT_ID").expect("GOOGLE_CLIENT_ID not set");
+    let client_secret = env::var("GOOGLE_CLIENT_SECRET").expect("GOOGLE_CLIENT_SECRET not set");
 
     let client = Client::new();
     let params = [
