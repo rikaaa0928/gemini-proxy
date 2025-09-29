@@ -105,9 +105,19 @@ jobs:
 
       - name: Prepare for Docker build
         run: |
-          mv artifacts/gemini-proxy-x86_64-linux-gnu/gemini-proxy-x86_64-linux-gnu binary-amd64
-          mv artifacts/gemini-proxy-aarch64-linux-gnu/gemini-proxy-aarch64-linux-gnu binary-arm64
-          chmod +x binary-amd64 binary-arm64
+          mkdir -p docker-context-amd64 docker-context-arm64
+          mv artifacts/gemini-proxy-x86_64-linux-gnu/gemini-proxy-x86_64-linux-gnu docker-context-amd64/gemini-proxy
+          mv artifacts/gemini-proxy-aarch64-linux-gnu/gemini-proxy-aarch64-linux-gnu docker-context-arm64/gemini-proxy
+          chmod +x docker-context-amd64/gemini-proxy docker-context-arm64/gemini-proxy
+          echo "FROM scratch" > docker-context-amd64/Dockerfile
+          echo "COPY gemini-proxy /gemini-proxy" >> docker-context-amd64/Dockerfile
+          echo "FROM scratch" > docker-context-arm64/Dockerfile
+          echo "COPY gemini-proxy /gemini-proxy" >> docker-context-arm64/Dockerfile
+
+      - name: Build local binary images
+        run: |
+          docker build -t binary-amd64 ./docker-context-amd64
+          docker build -t binary-arm64 ./docker-context-arm64
 
       - name: Log in to GitHub Container Registry
         uses: docker/login-action@v3

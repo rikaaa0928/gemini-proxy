@@ -1,11 +1,11 @@
 # Use a builder argument to select the platform
 ARG TARGETPLATFORM
+ARG TARGETARCH
 
-# Stage 1: Select the correct pre-built binary based on the target platform
-FROM scratch as builder
-ARG TARGETPLATFORM
-COPY --from=--platform=${TARGETPLATFORM} binary-amd64 /gemini-proxy
-COPY --from=--platform=${TARGETPLATFORM} binary-arm64 /gemini-proxy
+# Stage 1: This stage is just a pointer to the correct binary image.
+# The image name is constructed using the TARGETARCH build argument.
+# This is the workaround for the error "variable expansion is not supported for --from".
+FROM binary-${TARGETARCH} as builder
 
 # Stage 2: Final image
 FROM debian:stable-slim
