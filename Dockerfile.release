@@ -2,17 +2,12 @@
 ARG TARGETPLATFORM
 ARG TARGETARCH
 
-# Stage 1: This stage is just a pointer to the correct binary image.
-# The image name is constructed using the TARGETARCH build argument.
-# This is the workaround for the error "variable expansion is not supported for --from".
-FROM binary-${TARGETARCH} as builder
-
-# Stage 2: Final image
+# Final image
 FROM debian:stable-slim
 WORKDIR /app
 
-# Copy the correct binary from the builder stage
-COPY --from=builder /gemini-proxy ./gemini-proxy
+# Copy the correct binary from the build context based on the target architecture
+COPY ./bin/binary-${TARGETARCH} ./gemini-proxy
 
 # Install root certificates for making HTTPS requests
 RUN apt-get update && apt-get install -y ca-certificates && rm -rf /var/lib/apt/lists/*
