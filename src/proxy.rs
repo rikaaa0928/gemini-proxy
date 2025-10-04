@@ -281,7 +281,7 @@ pub async fn gemini_proxy_handler(
         "{}/{}:streamGenerateContent?alt=sse",
         CODE_ASSIST_ENDPOINT, CODE_ASSIST_API_VERSION
     );
-
+    println!("Sending request to {} req {} token {}", &backend_url,&internal_request.model, &token_record.access_token);
     let backend_response = match client
         .post(&backend_url)
         .bearer_auth(&token_record.access_token)
