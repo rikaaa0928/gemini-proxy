@@ -1,3 +1,4 @@
+use log::{debug, error, info, warn};
 use axum::{
     body::Body,
     extract::{Path, State},
@@ -250,23 +251,38 @@ pub async fn gemini_proxy_handler(
     // Parse path: expected format "model:streamGenerateContent"
     let parts: Vec<&str> = path.split(':').collect();
     if parts.len() != 2 || parts[1] != "streamGenerateContent" {
+        warn!("Invalid path format received: {}", path);
         return Response::builder()
             .status(400)
             .body(Body::from("Invalid path format. Expected /v1beta/models/{model}:streamGenerateContent"))
             .unwrap();
     }
     let model = parts[0].to_string();
+    info!("Proxying request for model: {}", model);
+    debug!("Request payload: {:?}", payload);
 
     // 1. Get and refresh token
     let mut token_record = match ensure_valid_token(&state, auth.token()).await {
-        Ok(record) => record,
-        Err(response) => return response,
+        Ok(record) => {
+            info!("Successfully validated and refreshed token for static token ending with: ...{}", &auth.token().chars().skip(auth.token().len() - 4).collect::<String>());
+            record
+        }
+        Err(response) => {
+            error!("Token validation failed for static token ending with: ...{}", &auth.token().chars().skip(auth.token().len() - 4).collect::<String>());
+            return response;
+        }
     };
 
     // 2. Discover project ID if needed
     let project_id = match discover_project_id(&state, &mut token_record).await {
-        Ok(id) => id,
-        Err(response) => return response,
+        Ok(id) => {
+            info!("Discovered project ID: {}", id);
+            id
+        }
+        Err(response) => {
+            error!("Failed to discover project ID.");
+            return response;
+        }
     };
 
     // 3. Prepare and send request to backend
@@ -281,7 +297,8 @@ pub async fn gemini_proxy_handler(
         "{}/{}:streamGenerateContent?alt=sse",
         CODE_ASSIST_ENDPOINT, CODE_ASSIST_API_VERSION
     );
-    println!("Sending request to {} req {} token {}", &backend_url,&internal_request.model, &token_record.access_token);
+    info!("Sending request to backend URL: {}", &backend_url);
+    debug!("Backend request body: {:?}", &internal_request);
     let backend_response = match client
         .post(&backend_url)
         .bearer_auth(&token_record.access_token)
@@ -291,21 +308,24 @@ pub async fn gemini_proxy_handler(
     {
         Ok(res) => res,
         Err(e) => {
+            error!("Backend request failed: {}", e);
             return Response::builder()
                 .status(500)
                 .body(Body::from(format!("Backend request failed: {}", e)))
                 .unwrap();
         }
     };
-    
+
     if !backend_response.status().is_success() {
         let status = backend_response.status();
         let text = backend_response.text().await.unwrap_or_default();
+        error!("Backend API error: {} - {}", status, text);
         return Response::builder()
             .status(status)
             .body(Body::from(format!("Backend API error: {} - {}", status, text)))
             .unwrap();
     }
+    info!("Successfully received response from backend.");
 
     // 4. Transform and stream response
     let stream = backend_response.bytes_stream();

@@ -24,6 +24,9 @@ async fn main() {
     // 加载 .env 文件中的环境变量
     dotenvy::dotenv().expect("Failed to load .env file");
 
+    // 初始化日志记录器
+    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
+
     // 从 APP_BASE_URL 解析主机和端口
     let app_base_url_str = env::var("APP_BASE_URL").expect("Missing APP_BASE_URL from .env");
     let app_url = Url::parse(&app_base_url_str).expect("Invalid APP_BASE_URL");
@@ -61,7 +64,7 @@ async fn main() {
     let addr_str = format!("{}:{}", host, port);
     let addr: SocketAddr = addr_str.parse().expect("Invalid address format");
 
-    println!("Gemini Proxy Server listening on http://{}", addr);
+    log::info!("Gemini Proxy Server listening on http://{}", addr);
     let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
     axum::serve(listener, app).await.unwrap();
 }
